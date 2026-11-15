@@ -4,14 +4,15 @@ Eine Web-App zum Lernen von Business-Englisch, mit Sprachausgabe in korrektem En
 
 ## Starten
 
+**Online:** https://spielkind1975.github.io/English-Learning/
+
+Lokal:
 `index.html` im Browser öffnen, am besten in **Chrome**, **Edge** oder **Safari**, weil Firefox keine Spracherkennung unterstützt. Für das Mikrofon muss die Seite über `https://` oder `localhost` laufen, zum Beispiel:
 
 ```bash
 python3 -m http.server 8000
 # dann http://localhost:8000 öffnen
 ```
-
-Alternativ lässt sich das Repository über GitHub Pages veröffentlichen.
 
 ## Funktionen
 
