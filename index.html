@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Business English Coach</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" data-nav="home" aria-label="Startseite">🇬🇧 Business English Coach</button>
+    <nav>
+      <button data-nav="home">Themen</button>
+      <button data-nav="pronunciation">Aussprache</button>
+      <button data-nav="review">Wiederholen</button>
+      <button data-nav="settings">Einstellungen</button>
+    </nav>
+  </header>
+
+  <div id="support-warning" class="banner" hidden></div>
+
+  <main id="app" tabindex="-1"></main>
+
+  <footer class="footer">
+    Sprachausgabe und Spracherkennung laufen über deinen Browser (am besten Chrome, Edge oder Safari).
+  </footer>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
