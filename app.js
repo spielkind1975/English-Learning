@@ -262,7 +262,7 @@
       h("div", { class: "muted", style: "margin-top:6px" }, "Erkannt: „", r.heard, "“"),
       h("div", { style: "margin-top:6px" }, words),
       missed.length ? h("div", { class: "muted", style: "margin-top:6px; font-size:.9rem" },
-        "Rot markierte Wörter wurden nicht erkannt – klicke darauf, um sie einzeln zu hören.") : null
+        "Rot markierte Wörter wurden nicht erkannt – klicke darauf, um sie einzeln zu hören.") : ""
     );
   }
 
