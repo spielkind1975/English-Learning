@@ -399,7 +399,7 @@
         : h("div", { class: "actions", style: "margin-top:12px; justify-content:center" },
             h("button", { class: "btn primary", onclick: () => { flipped = true; draw(); speak(c.term); } }, "Aufdecken"));
       const practice = flipped ? h("div", { style: "margin-top:12px" }, h("div", { class: "muted", style: "margin-bottom:6px" }, "Beispielsatz nachsprechen:"), practiceWidget(c.example)) : null;
-      wrap.replaceChildren(front, controls, practice);
+      wrap.replaceChildren(...[front, controls, practice].filter(Boolean));
     }
     function next() { idx++; flipped = false; draw(); }
     draw();
