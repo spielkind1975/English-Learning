@@ -43,8 +43,35 @@
   const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const sample = (arr, n) => shuffle(arr).slice(0, n);
 
+  // ---------- Brücke zur Android-App ----------
+  // In der Android-App stellt MainActivity.kt das Objekt "AndroidSpeech" bereit.
+  // Dann laufen Sprachausgabe und Spracherkennung über Android statt über den Browser.
+  const native = window.AndroidSpeech || null;
+  const nativeCalls = {};
+  let nativeSeq = 0;
+  function nativeCall(start) {
+    return new Promise((resolve, reject) => {
+      const id = "c" + (++nativeSeq);
+      nativeCalls[id] = { resolve, reject };
+      start(id);
+    });
+  }
+  function nativeSettle(id, fn) {
+    const call = nativeCalls[id];
+    if (!call) return;
+    delete nativeCalls[id];
+    fn(call);
+  }
+  window.__nativeSpeech = {
+    speakDone: (id) => nativeSettle(id, c => c.resolve()),
+    listenResult: (id, alternatives) => nativeSettle(id, c => c.resolve(alternatives || [])),
+    listenError: (id, code) => nativeSettle(id, c => c.reject(new Error(code)))
+  };
+
   // ---------- Sprachausgabe (Text-to-Speech) ----------
-  const synth = window.speechSynthesis;
+  const synth = native ? null : window.speechSynthesis;
+  const canSpeak = native ? native.canSpeak() : !!synth;
+  function stopSpeaking() { if (native) native.stop(); else synth?.cancel(); }
   let voices = [];
   function loadVoices() {
     if (!synth) return;
@@ -63,6 +90,10 @@
   }
 
   function speak(text, { rate } = {}) {
+    if (native) {
+      const speed = rate ?? state.settings.rate;
+      return nativeCall(id => native.speak(id, text, state.settings.lang, speed));
+    }
     if (!synth) return Promise.resolve();
     synth.cancel();
     return new Promise(resolve => {
@@ -77,12 +108,14 @@
   }
 
   // ---------- Spracherkennung ----------
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const Recognition = native ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const canListen = native ? native.canListen() : !!Recognition;
 
   function listen() {
+    if (native) return nativeCall(id => native.listen(id, state.settings.lang));
     return new Promise((resolve, reject) => {
       if (!Recognition) return reject(new Error("unsupported"));
-      synth?.cancel();
+      stopSpeaking();
       const rec = new Recognition();
       rec.lang = state.settings.lang;
       rec.interimResults = false;
@@ -102,7 +135,7 @@
   // ---------- Bewertung der Aussprache ----------
   const NUMBERS = ["zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen","twenty"];
   const CONTRACTIONS = {
-    "let's": "let us", "won't": "will not", "can't": "can not", "cannot": "can not", "shan't": "shall not",
+    "let's": "let us", "lets": "let us", "won't": "will not", "can't": "can not", "cannot": "can not", "shan't": "shall not",
     "i'm": "i am", "it's": "it is", "that's": "that is", "there's": "there is", "here's": "here is",
     "what's": "what is", "who's": "who is", "she's": "she is", "he's": "he is"
   };
@@ -154,15 +187,28 @@
     return best;
   }
 
+  const NO_RECOGNITION = native ? "Auf diesem Gerät ist keine Spracherkennung verfügbar. Installiere oder aktiviere die Google-App („Spracherkennung von Google“)." : "Dein Browser unterstützt keine Spracherkennung. Bitte nutze Chrome, Edge oder Safari.";
+  const LISTEN_ERRORS = {
+    "not-allowed": "Mikrofon-Zugriff wurde verweigert. Bitte erlaube den Zugriff in den Einstellungen.",
+    "service-not-allowed": "Mikrofon-Zugriff wurde verweigert. Bitte erlaube den Zugriff in den Einstellungen.",
+    "no-speech": "Ich habe nichts gehört. Ist das Mikrofon eingeschaltet?",
+    "audio-capture": "Kein Mikrofon gefunden.",
+    "network": "Die Spracherkennung braucht eine Internetverbindung.",
+    "unsupported": NO_RECOGNITION,
+    "language-unavailable": "Die Spracherkennung für Englisch ist auf diesem Gerät nicht installiert. Lade das englische Sprachpaket in den Einstellungen der Spracherkennung herunter.",
+    "aborted": "Abgebrochen."
+  };
+  const listenErrorText = (err) => LISTEN_ERRORS[err.message] || "Fehler bei der Spracherkennung: " + err.message;
+
   // ---------- Widget: Hören & Nachsprechen ----------
   function practiceWidget(text, { key, onScore } = {}) {
     const feedback = h("div", { class: "feedback", hidden: true });
     const micBtn = h("button", { class: "btn", title: "Nachsprechen und bewerten lassen" }, "🎤 Nachsprechen");
 
     micBtn.addEventListener("click", async () => {
-      if (!Recognition) {
+      if (!canListen) {
         feedback.hidden = false;
-        feedback.replaceChildren("Dein Browser unterstützt keine Spracherkennung. Bitte nutze Chrome, Edge oder Safari.");
+        feedback.replaceChildren(NO_RECOGNITION);
         return;
       }
       micBtn.classList.add("listening");
@@ -184,14 +230,7 @@
         onScore?.(r.score);
         renderFeedback(feedback, text, r);
       } catch (err) {
-        const msg = {
-          "not-allowed": "Mikrofon-Zugriff wurde verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.",
-          "service-not-allowed": "Mikrofon-Zugriff wurde verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.",
-          "no-speech": "Ich habe nichts gehört. Ist das Mikrofon eingeschaltet?",
-          "audio-capture": "Kein Mikrofon gefunden.",
-          "network": "Die Spracherkennung braucht eine Internetverbindung."
-        }[err.message] || "Fehler bei der Spracherkennung: " + err.message;
-        feedback.replaceChildren(msg);
+        feedback.replaceChildren(listenErrorText(err));
       } finally {
         micBtn.classList.remove("listening");
         micBtn.textContent = "🎤 Nachsprechen";
@@ -233,7 +272,7 @@
     return { view, id, tab };
   }
   function go(path) { location.hash = "#/" + path; }
-  window.addEventListener("hashchange", () => { synth?.cancel(); render(); window.scrollTo(0, 0); });
+  window.addEventListener("hashchange", () => { stopSpeaking(); render(); window.scrollTo(0, 0); });
   document.querySelectorAll("[data-nav]").forEach(b => b.addEventListener("click", () => go(b.dataset.nav)));
 
   function render() {
@@ -507,7 +546,7 @@
     const out = h("span", { class: "muted" });
     const mic = h("button", { class: "btn" }, "🎤 Sprechen");
     mic.addEventListener("click", async () => {
-      if (!Recognition) { out.textContent = "Spracherkennung wird in diesem Browser nicht unterstützt."; return; }
+      if (!canListen) { out.textContent = NO_RECOGNITION; return; }
       mic.classList.add("listening"); mic.disabled = true; out.textContent = "Sprich das Wort …";
       try {
         const alts = (await listen()).map(a => normalizeWords(a).join(" "));
@@ -516,7 +555,7 @@
         else if (alts[0] === target) out.replaceChildren(h("span", { class: "word ok" }, "✓ " + alts[0]), " Perfekt erkannt!");
         else if (alts.includes(target)) out.replaceChildren(h("span", { class: "word ok" }, "≈ " + target), ` Erkannt, aber unsicher (am ehesten „${alts[0]}“).`);
         else out.replaceChildren(h("span", { class: "word miss" }, alts[0]), ` – verstanden wurde „${alts[0]}“ statt „${target}“.`);
-      } catch (e) { out.textContent = "Fehler: " + e.message; }
+      } catch (e) { out.textContent = listenErrorText(e); }
       finally { mic.classList.remove("listening"); mic.disabled = false; }
     });
     return h("div", { class: "actions", style: "align-items:center; margin-top:4px" },
@@ -557,7 +596,7 @@
       h("h1", {}, "⚙️ Einstellungen"),
       h("div", { class: "card" },
         h("label", { class: "field" }, "Akzent (für Sprachausgabe und Spracherkennung)", langSel),
-        h("label", { class: "field" }, "Stimme", voiceSel,
+        native ? null : h("label", { class: "field" }, "Stimme", voiceSel,
           !voices.length ? h("span", { class: "muted" }, "Keine englischen Stimmen gefunden. Installiere ggf. eine englische Sprachausgabe in deinem Betriebssystem.") : null),
         h("label", { class: "field" }, h("span", {}, "Sprechtempo: ", rateLabel), rate),
         h("button", { class: "btn primary", onclick: () => speak("Good morning. Thank you for joining today's meeting. Let's get started.") }, "🔊 Stimme testen")
@@ -577,12 +616,15 @@
   // ---------- Start ----------
   const warn = document.getElementById("support-warning");
   const issues = [];
-  if (!synth) issues.push("Sprachausgabe");
-  if (!Recognition) issues.push("Spracherkennung");
+  if (!canSpeak) issues.push("Sprachausgabe");
+  if (!canListen) issues.push("Spracherkennung");
   if (issues.length) {
     warn.hidden = false;
-    warn.textContent = `Hinweis: Dein Browser unterstützt keine ${issues.join(" und ")}. Für alle Funktionen nutze bitte Chrome, Edge oder Safari.`;
+    warn.textContent = native
+      ? "Hinweis: Auf diesem Gerät ist keine Spracherkennung verfügbar. Installiere oder aktiviere die Google-App, um die Aussprache-Übungen zu nutzen."
+      : `Hinweis: Dein Browser unterstützt keine ${issues.join(" und ")}. Für alle Funktionen nutze bitte Chrome, Edge oder Safari.`;
   }
+  if (native) document.querySelector(".footer").textContent = "Sprachausgabe und Spracherkennung laufen über dein Android-Gerät.";
 
   // Test-Hook
   window.__bec = { compare, normalizeWords };
